@@ -1,0 +1,219 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model - represents a person using the system
+model User {
+  id                   String                 @id @default(uuid())
+  email                String                 @unique
+  passwordHash         String
+  firstName            String
+  lastName             String
+  phoneNumber          String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  bandMembers          BandMember[]
+  createdBands         Band[]                 @relation("BandCreator")
+  regularAvailability  RegularAvailability[]
+  availabilityExceptions AvailabilityException[]
+  createdRehearsals    Rehearsal[]            @relation("RehearsalCreator")
+  createdSetlists      Setlist[]              @relation("SetlistCreator")
+  notifications        Notification[]
+}
+
+// Band model - represents a music group
+model Band {
+  id           String       @id @default(uuid())
+  name         String
+  description  String?
+  createdById  String
+  createdBy    User         @relation("BandCreator", fields: [createdById], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  members      BandMember[]
+  rehearsals   Rehearsal[]
+  setlists     Setlist[]
+  songs        Song[]
+}
+
+// BandMember model - represents a user's membership in a band
+model BandMember {
+  id            String               @id @default(uuid())
+  bandId        String
+  band          Band                 @relation(fields: [bandId], references: [id])
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id])
+  role          BandMemberRole
+  instrument    String?
+  joinDate      DateTime             @default(now())
+  status        BandMemberStatus     @default(ACTIVE)
+  attendances   RehearsalAttendance[]
+
+  @@unique([bandId, userId])
+}
+
+enum BandMemberRole {
+  LEADER
+  MEMBER
+}
+
+enum BandMemberStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// RegularAvailability model - represents a user's regular weekly availability
+model RegularAvailability {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  dayOfWeek   Int      // 0-6 representing Sunday-Saturday
+  startTime   String   // Format: HH:MM in 24-hour time
+  endTime     String   // Format: HH:MM in 24-hour time
+  isAvailable Boolean
+}
+
+// AvailabilityException model - represents an exception to regular availability
+model AvailabilityException {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  date        DateTime // Specific date for the exception
+  startTime   String   // Format: HH:MM in 24-hour time
+  endTime     String   // Format: HH:MM in 24-hour time
+  isAvailable Boolean
+  reason      String?
+}
+
+// Rehearsal model - represents a scheduled rehearsal session
+model Rehearsal {
+  id                String               @id @default(uuid())
+  bandId            String
+  band              Band                 @relation(fields: [bandId], references: [id])
+  title             String
+  description       String?
+  location          String?
+  date              DateTime
+  startTime         String               // Format: HH:MM in 24-hour time
+  endTime           String               // Format: HH:MM in 24-hour time
+  createdById       String
+  createdBy         User                 @relation("RehearsalCreator", fields: [createdById], references: [id])
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  status            RehearsalStatus      @default(SCHEDULED)
+  isRecurring       Boolean              @default(false)
+  recurrencePattern Json?                // JSON object defining the recurrence pattern
+  attendances       RehearsalAttendance[]
+  setlists          RehearsalSetlist[]
+}
+
+enum RehearsalStatus {
+  SCHEDULED
+  CANCELED
+  COMPLETED
+}
+
+// RehearsalAttendance model - represents a band member's attendance at a rehearsal
+model RehearsalAttendance {
+  id                 String              @id @default(uuid())
+  rehearsalId        String
+  rehearsal          Rehearsal           @relation(fields: [rehearsalId], references: [id])
+  bandMemberId       String
+  bandMember         BandMember          @relation(fields: [bandMemberId], references: [id])
+  status             AttendanceStatus    @default(NO_RESPONSE)
+  responseTime       DateTime?
+  attendanceRecorded Boolean             @default(false)
+  notes              String?
+
+  @@unique([rehearsalId, bandMemberId])
+}
+
+enum AttendanceStatus {
+  CONFIRMED
+  DECLINED
+  TENTATIVE
+  NO_RESPONSE
+}
+
+// Setlist model - represents a collection of songs for rehearsal or performance
+model Setlist {
+  id          String            @id @default(uuid())
+  bandId      String
+  band        Band              @relation(fields: [bandId], references: [id])
+  name        String
+  description String?
+  createdById String
+  createdBy   User              @relation("SetlistCreator", fields: [createdById], references: [id])
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  songs       SetlistSong[]
+  rehearsals  RehearsalSetlist[]
+}
+
+// Song model - represents a song in the band's repertoire
+model Song {
+  id          String        @id @default(uuid())
+  bandId      String
+  band        Band          @relation(fields: [bandId], references: [id])
+  title       String
+  artist      String?
+  duration    Int?          // Duration in seconds
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  setlists    SetlistSong[]
+}
+
+// SetlistSong model - represents a song's position in a setlist
+model SetlistSong {
+  id         String  @id @default(uuid())
+  setlistId  String
+  setlist    Setlist @relation(fields: [setlistId], references: [id])
+  songId     String
+  song       Song    @relation(fields: [songId], references: [id])
+  position   Int     // Order in the setlist
+  notes      String?
+
+  @@unique([setlistId, songId])
+  @@unique([setlistId, position])
+}
+
+// RehearsalSetlist model - represents a setlist used in a rehearsal
+model RehearsalSetlist {
+  rehearsalId String
+  rehearsal   Rehearsal @relation(fields: [rehearsalId], references: [id])
+  setlistId   String
+  setlist     Setlist   @relation(fields: [setlistId], references: [id])
+
+  @@id([rehearsalId, setlistId])
+}
+
+// Notification model - represents a notification for a user
+model Notification {
+  id        String             @id @default(uuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id])
+  type      NotificationType
+  content   String
+  relatedId String?            // ID of the related entity (rehearsal, band, etc.)
+  isRead    Boolean            @default(false)
+  createdAt DateTime           @default(now())
+}
+
+enum NotificationType {
+  REHEARSAL_SCHEDULED
+  REHEARSAL_CHANGED
+  REHEARSAL_CANCELED
+  REMINDER
+  BAND_INVITE
+  SETLIST_CREATED
+  ATTENDANCE_REQUESTED
+}
